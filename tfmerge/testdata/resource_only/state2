@@ -1,0 +1,23 @@
+{
+  "version": 4,
+  "terraform_version": "1.2.7",
+  "serial": 1,
+  "lineage": "76bfda81-f1f9-70c6-d7d4-df7d8c23de5a",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "null_resource",
+      "name": "test2",
+      "provider": "provider[\"registry.terraform.io/hashicorp/null\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {},
+          "sensitive_attributes": [],
+          "private": "bnVsbA=="
+        }
+      ]
+    }
+  ]
+}
