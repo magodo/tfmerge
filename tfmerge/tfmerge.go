@@ -121,8 +121,9 @@ func initTerraform(ctx context.Context, tfwd string) (*tfexec.Terraform, error) 
 	i := install.NewInstaller()
 	tfpath, err := i.Ensure(ctx, []src.Source{
 		&fs.Version{
-			Product:     product.Terraform,
-			Constraints: version.MustConstraints(version.NewConstraint(">=1.0.0")),
+			Product: product.Terraform,
+			// `terraform stat mv` is introducd since v1.1.0: https://github.com/hashicorp/terraform/releases/tag/v1.1.0
+			Constraints: version.MustConstraints(version.NewConstraint(">=1.1.0")),
 		},
 	})
 	if err != nil {
