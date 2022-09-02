@@ -3,13 +3,13 @@ package tfmerge
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func initTest(ctx context.Context, t *testing.T) string {
@@ -60,23 +60,28 @@ func testFixture(t *testing.T, name string) (stateFiles []string, expectState []
 	return
 }
 
-func stateEqual(src, dst []byte) (bool, error) {
-	var srcState, dstState map[string]interface{}
-	if err := json.Unmarshal(src, &srcState); err != nil {
-		return false, fmt.Errorf("unmarshal source state\n%s\n: %v", string(src), err)
+func assertStateEqual(t *testing.T, actual, expect []byte) {
+	var actualState, expectState map[string]interface{}
+	if err := json.Unmarshal(actual, &actualState); err != nil {
+		t.Fatalf("unmarshal actual state\n%s\n: %v", string(actual), err)
 	}
-	if err := json.Unmarshal(dst, &dstState); err != nil {
-		return false, fmt.Errorf("unmarshal dest state\n%s\n: %v", string(dst), err)
+	if err := json.Unmarshal(expect, &expectState); err != nil {
+		t.Fatalf("unmarshal expect state\n%s\n: %v", string(expect), err)
 	}
-
-	delete(srcState, "lineage")
-	delete(dstState, "lineage")
 
 	// The terraform version used to create the testdata might be different than the one running this test.
-	delete(srcState, "terraform_version")
-	delete(dstState, "terraform_version")
+	delete(actualState, "terraform_version")
+	delete(expectState, "terraform_version")
 
-	return reflect.DeepEqual(srcState, dstState), nil
+	actualJson, err := json.Marshal(actualState)
+	if err != nil {
+		t.Fatalf("marshal modified actual state: %v", err)
+	}
+	expectJson, err := json.Marshal(expectState)
+	if err != nil {
+		t.Fatalf("marshal modified expect state: %v", err)
+	}
+	require.JSONEq(t, string(expectJson), string(actualJson))
 }
 
 func TestMerge_resourceOnly(t *testing.T) {
@@ -88,13 +93,7 @@ func TestMerge_resourceOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := stateEqual(actual, expect)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatalf("state not equals to the expected.\n\nActual:\n%s\n\nExpected:\n%s\n", actual, expect)
-	}
+	assertStateEqual(t, actual, expect)
 }
 
 func TestMerge_modules(t *testing.T) {
@@ -106,11 +105,5 @@ func TestMerge_modules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := stateEqual(actual, expect)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatalf("state not equals to the expected.\n\nActual:\n%s\n\nExpected:\n%s\n", actual, expect)
-	}
+	assertStateEqual(t, actual, expect)
 }

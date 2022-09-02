@@ -14,7 +14,7 @@ import (
 func main() {
 	app := &cli.App{
 		Name:      "tfmerge",
-		Usage:     "Merge Terraform state files",
+		Usage:     "Merge Terraform state files. The first statefile is used as the base of the merged state file (mainly to retain its lineage).",
 		UsageText: "tfmerge [option] statefile ...",
 		Flags: []cli.Flag{
 			&cli.StringFlag{

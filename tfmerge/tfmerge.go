@@ -22,6 +22,10 @@ type Option struct {
 }
 
 func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error) {
+	if len(stateFiles) == 1 {
+		return os.ReadFile(stateFiles[0])
+	}
+
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
@@ -83,6 +87,10 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 		stateItems[v] = append(stateItems[v], k)
 	}
 
+	// Remove the items that belongs to the base state file
+	baseStateFile := stateFiles[0]
+	delete(stateItems, baseStateFile)
+
 	// Debug output only
 	log.Println("Items to be moved:")
 	for stateFile, items := range stateItems {
@@ -97,11 +105,9 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 	defer os.RemoveAll(tmpdir)
 
 	ofpath := filepath.Join(tmpdir, "terraform.tfstate")
-	f, err := os.Create(ofpath)
-	if err != nil {
-		return nil, fmt.Errorf("creating a temp state file %s: %v", ofpath, err)
+	if err := copyFile(baseStateFile, ofpath); err != nil {
+		return nil, fmt.Errorf("creating the base state file: %v", err)
 	}
-	f.Close()
 
 	for stateFile, items := range stateItems {
 		log.Printf("Run `terraform state move` for %s\n", stateFile)
