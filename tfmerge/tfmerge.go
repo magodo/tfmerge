@@ -22,10 +22,6 @@ type Option struct {
 }
 
 func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error) {
-	if len(stateFiles) == 1 {
-		return os.ReadFile(stateFiles[0])
-	}
-
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
@@ -36,17 +32,40 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 	}
 	stateFiles = absStateFiles
 
+	// Create an empty directory to hold the state files' copies and the merged state file
+	tmpdir, err := os.MkdirTemp("", "")
+	if err != nil {
+		return nil, fmt.Errorf("creating an empty directory as the terraform working directroy: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
+
 	log.Println("Initialize Terraform instance")
 	tf, err := initTerraform(ctx, opt.Wd)
 	if err != nil {
 		return nil, fmt.Errorf("initializing terraform instance: %v", err)
 	}
 
+	baseState, err := tf.StatePull(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("pulling state file of the working directory: %v", err)
+	}
+	baseStateFile := filepath.Join(tmpdir, "terraform.tfstate")
+	if err := os.WriteFile(baseStateFile, []byte(baseState), 0644); err != nil {
+		return nil, fmt.Errorf("creating the base state file: %v", err)
+	}
+
 	log.Println("List resources/modules to be merged")
 	var result *multierror.Error
 	resmap := map[string]string{}
 	modmap := map[string]string{}
-	for _, stateFile := range stateFiles {
+
+	// If there is no state file in the current working directory, "terraform state pull" returns an empty string.
+	// In this case, we don't append it into the state file list for listing move items.
+	stl := stateFiles[:]
+	if baseState != "" {
+		stl = append(stl, baseStateFile)
+	}
+	for _, stateFile := range stl {
 		state, err := tf.ShowStateFile(ctx, stateFile)
 		if err != nil {
 			result = multierror.Append(result, fmt.Errorf("showing state file %s: %v", stateFile, err))
@@ -88,7 +107,6 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 	}
 
 	// Remove the items that belongs to the base state file
-	baseStateFile := stateFiles[0]
 	delete(stateItems, baseStateFile)
 
 	// Debug output only
@@ -97,28 +115,16 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 		log.Printf("\t%s: %v\n", stateFile, items)
 	}
 
-	// Create an empty directory to hold the state files' copies and the merged state file
-	tmpdir, err := os.MkdirTemp("", "")
-	if err != nil {
-		return nil, fmt.Errorf("creating an empty directory as the terraform working directroy: %v", err)
-	}
-	defer os.RemoveAll(tmpdir)
-
-	ofpath := filepath.Join(tmpdir, "terraform.tfstate")
-	if err := copyFile(baseStateFile, ofpath); err != nil {
-		return nil, fmt.Errorf("creating the base state file: %v", err)
-	}
-
 	for stateFile, items := range stateItems {
 		log.Printf("Run `terraform state move` for %s\n", stateFile)
-		if err := move(ctx, tf, tmpdir, stateFile, ofpath, items); err != nil {
+		if err := move(ctx, tf, tmpdir, stateFile, baseStateFile, items); err != nil {
 			return nil, fmt.Errorf("terraform state move from %s: %v", stateFile, err)
 		}
 	}
 
-	b, err := os.ReadFile(ofpath)
+	b, err := os.ReadFile(baseStateFile)
 	if err != nil {
-		return nil, fmt.Errorf("reading from merged state file %s: %v", ofpath, err)
+		return nil, fmt.Errorf("reading from merged state file %s: %v", baseStateFile, err)
 	}
 	return b, nil
 }

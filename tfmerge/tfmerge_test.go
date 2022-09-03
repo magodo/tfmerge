@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func initTest(ctx context.Context, t *testing.T) string {
+func initTest(ctx context.Context, t *testing.T, genBaseState bool) string {
 	// Discard log output
 	log.SetOutput(io.Discard)
 
@@ -31,6 +31,19 @@ func initTest(ctx context.Context, t *testing.T) string {
 }
 `), 0644); err != nil {
 		t.Fatal(err)
+	}
+	if genBaseState {
+		if err := os.WriteFile(filepath.Join(dir, "terraform.tfstate"), []byte(`{
+  "version": 4,
+  "terraform_version": "1.2.8",
+  "serial": 1,
+  "lineage": "00000000-0000-0000-0000-000000000000",
+  "outputs": {},
+  "resources": []
+}
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := tf.Init(ctx); err != nil {
 		t.Fatal(err)
@@ -60,7 +73,7 @@ func testFixture(t *testing.T, name string) (stateFiles []string, expectState []
 	return
 }
 
-func assertStateEqual(t *testing.T, actual, expect []byte) {
+func assertStateEqual(t *testing.T, actual, expect []byte, mergedCount int, hasBaseState bool) {
 	var actualState, expectState map[string]interface{}
 	if err := json.Unmarshal(actual, &actualState); err != nil {
 		t.Fatalf("unmarshal actual state\n%s\n: %v", string(actual), err)
@@ -68,6 +81,15 @@ func assertStateEqual(t *testing.T, actual, expect []byte) {
 	if err := json.Unmarshal(expect, &expectState); err != nil {
 		t.Fatalf("unmarshal expect state\n%s\n: %v", string(expect), err)
 	}
+
+	if !hasBaseState {
+		delete(actualState, "lineage")
+		delete(expectState, "lineage")
+	}
+	if hasBaseState {
+		mergedCount += 1
+	}
+	expectState["serial"] = mergedCount
 
 	// The terraform version used to create the testdata might be different than the one running this test.
 	delete(actualState, "terraform_version")
@@ -84,26 +106,81 @@ func assertStateEqual(t *testing.T, actual, expect []byte) {
 	require.JSONEq(t, string(expectJson), string(actualJson))
 }
 
-func TestMerge_resourceOnly(t *testing.T) {
-	ctx := context.Background()
-	wd := initTest(ctx, t)
-
-	stateFiles, expect := testFixture(t, "resource_only")
-	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
-	if err != nil {
-		t.Fatal(err)
+func TestMerge(t *testing.T) {
+	cases := []struct {
+		name         string
+		dir          string
+		hasBaseState bool
+	}{
+		{
+			name:         "Resource Only (no base state)",
+			dir:          "resource_only",
+			hasBaseState: false,
+		},
+		{
+			name:         "Resource Only (base state)",
+			dir:          "resource_only",
+			hasBaseState: true,
+		},
+		{
+			name:         "Module (no base state)",
+			dir:          "module",
+			hasBaseState: false,
+		},
+		{
+			name:         "Module (base state)",
+			dir:          "module",
+			hasBaseState: true,
+		},
 	}
-	assertStateEqual(t, actual, expect)
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			wd := initTest(ctx, t, tt.hasBaseState)
+
+			stateFiles, expect := testFixture(t, tt.dir)
+			actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertStateEqual(t, actual, expect, len(stateFiles), tt.hasBaseState)
+		})
+	}
 }
 
-func TestMerge_modules(t *testing.T) {
-	ctx := context.Background()
-	wd := initTest(ctx, t)
+// func TestMerge_resourceOnly_noBaseState(t *testing.T) {
+// 	ctx := context.Background()
+// 	wd := initTest(ctx, t, false)
 
-	stateFiles, expect := testFixture(t, "module")
-	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertStateEqual(t, actual, expect)
-}
+// 	stateFiles, expect := testFixture(t, "resource_only")
+// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	assertStateEqual(t, actual, expect, true)
+// }
+
+// func TestMerge_resourceOnly_BaseState(t *testing.T) {
+// 	ctx := context.Background()
+// 	wd := initTest(ctx, t, true)
+
+// 	stateFiles, expect := testFixture(t, "resource_only")
+// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	assertStateEqual(t, actual, expect, true)
+// }
+
+// func TestMerge_modules_noInitState(t *testing.T) {
+// 	ctx := context.Background()
+// 	wd := initTest(ctx, t, false)
+
+// 	stateFiles, expect := testFixture(t, "module")
+// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	assertStateEqual(t, actual, expect, true)
+// }
