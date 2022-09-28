@@ -21,3 +21,8 @@ If your *wd* is using [a non-local backend](https://www.terraform.io/language/se
 - Copy all the state files to a temporary directory, to avoid mutation on existing state files.
 - Repeatedly run `terraform state mv -state-out=<base statefile copy> -state=<statefile1 copy> <item address> <item address>`
 - Return the merged base state file
+
+## Reference
+
+- https://discuss.hashicorp.com/t/will-state-and-state-out-be-removed-for-terraform-state-mv-subcommand/44630
+- https://support.hashicorp.com/hc/en-us/articles/4418624552339-How-to-Merge-State-Files
