@@ -8,20 +8,10 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/go-version"
-	install "github.com/hashicorp/hc-install"
-	"github.com/hashicorp/hc-install/fs"
-	"github.com/hashicorp/hc-install/product"
-	"github.com/hashicorp/hc-install/src"
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-type Option struct {
-	// The path to an initialized Terraform working directory.
-	Wd string
-}
-
-func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error) {
+func Merge(ctx context.Context, tf *tfexec.Terraform, stateFiles []string) ([]byte, error) {
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
@@ -38,12 +28,6 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 		return nil, fmt.Errorf("creating an empty directory as the terraform working directroy: %v", err)
 	}
 	defer os.RemoveAll(tmpdir)
-
-	log.Println("Initialize Terraform instance")
-	tf, err := initTerraform(ctx, opt.Wd)
-	if err != nil {
-		return nil, fmt.Errorf("initializing terraform instance: %v", err)
-	}
 
 	baseState, err := tf.StatePull(ctx)
 	if err != nil {
@@ -127,32 +111,6 @@ func Merge(ctx context.Context, stateFiles []string, opt Option) ([]byte, error)
 		return nil, fmt.Errorf("reading from merged state file %s: %v", baseStateFile, err)
 	}
 	return b, nil
-}
-
-func initTerraform(ctx context.Context, tfwd string) (*tfexec.Terraform, error) {
-	i := install.NewInstaller()
-	tfpath, err := i.Ensure(ctx, []src.Source{
-		&fs.Version{
-			Product: product.Terraform,
-			// `terraform stat mv` is introducd since v1.1.0: https://github.com/hashicorp/terraform/releases/tag/v1.1.0
-			Constraints: version.MustConstraints(version.NewConstraint(">=1.1.0")),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("finding a terraform executable: %v", err)
-	}
-
-	tf, err := tfexec.NewTerraform(tfwd, tfpath)
-	if err != nil {
-		return nil, fmt.Errorf("error running NewTerraform: %w", err)
-	}
-	if v, ok := os.LookupEnv("TF_LOG_PATH"); ok {
-		tf.SetLogPath(v)
-	}
-	if v, ok := os.LookupEnv("TF_LOG"); ok {
-		tf.SetLog(v)
-	}
-	return tf, nil
 }
 
 func copyFile(src, dst string) error {

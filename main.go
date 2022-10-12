@@ -7,6 +7,12 @@ import (
 	"log"
 	"os"
 
+	"github.com/hashicorp/go-version"
+	install "github.com/hashicorp/hc-install"
+	"github.com/hashicorp/hc-install/fs"
+	"github.com/hashicorp/hc-install/product"
+	"github.com/hashicorp/hc-install/src"
+	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/magodo/tfmerge/tfmerge"
 	"github.com/urfave/cli/v2"
 )
@@ -46,15 +52,16 @@ func main() {
 				return err
 			}
 
-			opt := tfmerge.Option{
-				Wd: cwd,
-			}
-
 			if v := ctx.String("chdir"); v != "" {
-				opt.Wd = v
+				cwd = v
 			}
 
-			b, err := tfmerge.Merge(context.Background(), ctx.Args().Slice(), opt)
+			tf, err := initTerraform(context.Background(), cwd)
+			if err != nil {
+				return err
+			}
+
+			b, err := tfmerge.Merge(context.Background(), tf, ctx.Args().Slice())
 			if err != nil {
 				return err
 			}
@@ -71,4 +78,30 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func initTerraform(ctx context.Context, tfwd string) (*tfexec.Terraform, error) {
+	i := install.NewInstaller()
+	tfpath, err := i.Ensure(ctx, []src.Source{
+		&fs.Version{
+			Product: product.Terraform,
+			// `terraform stat mv` is introducd since v1.1.0: https://github.com/hashicorp/terraform/releases/tag/v1.1.0
+			Constraints: version.MustConstraints(version.NewConstraint(">=1.1.0")),
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("finding a terraform executable: %v", err)
+	}
+
+	tf, err := tfexec.NewTerraform(tfwd, tfpath)
+	if err != nil {
+		return nil, fmt.Errorf("error running NewTerraform: %w", err)
+	}
+	if v, ok := os.LookupEnv("TF_LOG_PATH"); ok {
+		tf.SetLogPath(v)
+	}
+	if v, ok := os.LookupEnv("TF_LOG"); ok {
+		tf.SetLog(v)
+	}
+	return tf, nil
 }

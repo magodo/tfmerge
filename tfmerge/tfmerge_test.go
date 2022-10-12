@@ -9,18 +9,34 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hashicorp/go-version"
+	install "github.com/hashicorp/hc-install"
+	"github.com/hashicorp/hc-install/fs"
+	"github.com/hashicorp/hc-install/product"
+	"github.com/hashicorp/hc-install/src"
+	"github.com/hashicorp/terraform-exec/tfexec"
 	"github.com/stretchr/testify/require"
 )
 
-func initTest(ctx context.Context, t *testing.T, genBaseState bool) string {
+func initTest(ctx context.Context, t *testing.T, genBaseState bool) *tfexec.Terraform {
 	// Discard log output
 	log.SetOutput(io.Discard)
 
 	// Init terraform with null provider
 	dir := t.TempDir()
-	tf, err := initTerraform(ctx, dir)
+	i := install.NewInstaller()
+	tfpath, err := i.Ensure(ctx, []src.Source{
+		&fs.Version{
+			Product:     product.Terraform,
+			Constraints: version.MustConstraints(version.NewConstraint(">=1.1.0")),
+		},
+	})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("finding a terraform executable: %v", err)
+	}
+	tf, err := tfexec.NewTerraform(dir, tfpath)
+	if err != nil {
+		t.Fatalf("error running NewTerraform: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "terraform.tf"), []byte(`terraform {
   required_providers {
@@ -49,7 +65,7 @@ func initTest(ctx context.Context, t *testing.T, genBaseState bool) string {
 		t.Fatal(err)
 	}
 
-	return dir
+	return tf
 }
 
 func testFixture(t *testing.T, name string) (stateFiles []string, expectState []byte) {
@@ -137,10 +153,9 @@ func TestMerge(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			wd := initTest(ctx, t, tt.hasBaseState)
-
+			tf := initTest(ctx, t, tt.hasBaseState)
 			stateFiles, expect := testFixture(t, tt.dir)
-			actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
+			actual, err := Merge(context.Background(), tf, stateFiles)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -148,39 +163,3 @@ func TestMerge(t *testing.T) {
 		})
 	}
 }
-
-// func TestMerge_resourceOnly_noBaseState(t *testing.T) {
-// 	ctx := context.Background()
-// 	wd := initTest(ctx, t, false)
-
-// 	stateFiles, expect := testFixture(t, "resource_only")
-// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	assertStateEqual(t, actual, expect, true)
-// }
-
-// func TestMerge_resourceOnly_BaseState(t *testing.T) {
-// 	ctx := context.Background()
-// 	wd := initTest(ctx, t, true)
-
-// 	stateFiles, expect := testFixture(t, "resource_only")
-// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	assertStateEqual(t, actual, expect, true)
-// }
-
-// func TestMerge_modules_noInitState(t *testing.T) {
-// 	ctx := context.Background()
-// 	wd := initTest(ctx, t, false)
-
-// 	stateFiles, expect := testFixture(t, "module")
-// 	actual, err := Merge(context.Background(), stateFiles, Option{Wd: wd})
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	assertStateEqual(t, actual, expect, true)
-// }
