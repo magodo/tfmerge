@@ -11,7 +11,9 @@ import (
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-func Merge(ctx context.Context, tf *tfexec.Terraform, stateFiles []string) ([]byte, error) {
+// Merge merges the state files to the base state. If there is any address conflicts for either resource or module, it will error.
+// baseState can be empty.
+func Merge(ctx context.Context, tf *tfexec.Terraform, baseState string, stateFiles []string) ([]byte, error) {
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
@@ -29,10 +31,6 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, stateFiles []string) ([]by
 	}
 	defer os.RemoveAll(tmpdir)
 
-	baseState, err := tf.StatePull(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("pulling state file of the working directory: %v", err)
-	}
 	baseStateFile := filepath.Join(tmpdir, "terraform.tfstate")
 	if err := os.WriteFile(baseStateFile, []byte(baseState), 0644); err != nil {
 		return nil, fmt.Errorf("creating the base state file: %v", err)

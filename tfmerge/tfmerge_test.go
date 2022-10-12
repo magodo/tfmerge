@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func initTest(ctx context.Context, t *testing.T, genBaseState bool) *tfexec.Terraform {
+func initTest(ctx context.Context, t *testing.T) *tfexec.Terraform {
 	// Discard log output
 	log.SetOutput(io.Discard)
 
@@ -48,19 +48,7 @@ func initTest(ctx context.Context, t *testing.T, genBaseState bool) *tfexec.Terr
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if genBaseState {
-		if err := os.WriteFile(filepath.Join(dir, "terraform.tfstate"), []byte(`{
-  "version": 4,
-  "terraform_version": "1.2.8",
-  "serial": 1,
-  "lineage": "00000000-0000-0000-0000-000000000000",
-  "outputs": {},
-  "resources": []
-}
-`), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
+
 	if err := tf.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -124,42 +112,56 @@ func assertStateEqual(t *testing.T, actual, expect []byte, mergedCount int, hasB
 
 func TestMerge(t *testing.T) {
 	cases := []struct {
-		name         string
-		dir          string
-		hasBaseState bool
+		name      string
+		dir       string
+		baseState string
 	}{
 		{
-			name:         "Resource Only (no base state)",
-			dir:          "resource_only",
-			hasBaseState: false,
+			name: "Resource Only (no base state)",
+			dir:  "resource_only",
 		},
 		{
-			name:         "Resource Only (base state)",
-			dir:          "resource_only",
-			hasBaseState: true,
+			name: "Resource Only (base state)",
+			dir:  "resource_only",
+			baseState: `{
+  "version": 4,
+  "terraform_version": "1.2.8",
+  "serial": 1,
+  "lineage": "00000000-0000-0000-0000-000000000000",
+  "outputs": {},
+  "resources": []
+}
+`,
 		},
 		{
-			name:         "Module (no base state)",
-			dir:          "module",
-			hasBaseState: false,
+			name: "Module (no base state)",
+			dir:  "module",
 		},
 		{
-			name:         "Module (base state)",
-			dir:          "module",
-			hasBaseState: true,
+			name: "Module (base state)",
+			dir:  "module",
+			baseState: `{
+  "version": 4,
+  "terraform_version": "1.2.8",
+  "serial": 1,
+  "lineage": "00000000-0000-0000-0000-000000000000",
+  "outputs": {},
+  "resources": []
+}
+`,
 		},
 	}
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			tf := initTest(ctx, t, tt.hasBaseState)
+			tf := initTest(ctx, t)
 			stateFiles, expect := testFixture(t, tt.dir)
-			actual, err := Merge(context.Background(), tf, stateFiles)
+			actual, err := Merge(context.Background(), tf, tt.baseState, stateFiles)
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertStateEqual(t, actual, expect, len(stateFiles), tt.hasBaseState)
+			assertStateEqual(t, actual, expect, len(stateFiles), tt.baseState != "")
 		})
 	}
 }

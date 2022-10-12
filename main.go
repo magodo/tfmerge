@@ -61,7 +61,12 @@ func main() {
 				return err
 			}
 
-			b, err := tfmerge.Merge(context.Background(), tf, ctx.Args().Slice())
+			baseState, err := tf.StatePull(ctx.Context)
+			if err != nil {
+				return fmt.Errorf("pulling state file of the working directory: %v", err)
+			}
+
+			b, err := tfmerge.Merge(ctx.Context, tf, baseState, ctx.Args().Slice())
 			if err != nil {
 				return err
 			}
