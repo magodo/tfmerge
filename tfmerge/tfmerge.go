@@ -12,8 +12,12 @@ import (
 )
 
 // Merge merges the state files to the base state. If there is any address conflicts for either resource or module, it will error.
-// baseState can be empty.
+// baseState can be nil to indicate no base state file.
 func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFiles ...string) ([]byte, error) {
+	if baseState == nil {
+		baseState = []byte{}
+	}
+
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
