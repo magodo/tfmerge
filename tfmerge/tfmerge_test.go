@@ -157,7 +157,7 @@ func TestMerge(t *testing.T) {
 			ctx := context.Background()
 			tf := initTest(ctx, t)
 			stateFiles, expect := testFixture(t, tt.dir)
-			actual, err := Merge(context.Background(), tf, tt.baseState, stateFiles)
+			actual, err := Merge(context.Background(), tf, []byte(tt.baseState), stateFiles...)
 			if err != nil {
 				t.Fatal(err)
 			}

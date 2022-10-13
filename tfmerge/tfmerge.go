@@ -13,7 +13,7 @@ import (
 
 // Merge merges the state files to the base state. If there is any address conflicts for either resource or module, it will error.
 // baseState can be empty.
-func Merge(ctx context.Context, tf *tfexec.Terraform, baseState string, stateFiles []string) ([]byte, error) {
+func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFiles ...string) ([]byte, error) {
 	absStateFiles := []string{}
 	for _, stateFile := range stateFiles {
 		absPath, err := filepath.Abs(stateFile)
@@ -32,7 +32,7 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState string, stateFil
 	defer os.RemoveAll(tmpdir)
 
 	baseStateFile := filepath.Join(tmpdir, "terraform.tfstate")
-	if err := os.WriteFile(baseStateFile, []byte(baseState), 0644); err != nil {
+	if err := os.WriteFile(baseStateFile, baseState, 0644); err != nil {
 		return nil, fmt.Errorf("creating the base state file: %v", err)
 	}
 
@@ -44,7 +44,7 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState string, stateFil
 	// If there is no state file in the current working directory, "terraform state pull" returns an empty string.
 	// In this case, we don't append it into the state file list for listing move items.
 	stl := stateFiles[:]
-	if baseState != "" {
+	if len(baseState) != 0 {
 		stl = append(stl, baseStateFile)
 	}
 	for _, stateFile := range stl {

@@ -66,7 +66,7 @@ func main() {
 				return fmt.Errorf("pulling state file of the working directory: %v", err)
 			}
 
-			b, err := tfmerge.Merge(ctx.Context, tf, baseState, ctx.Args().Slice())
+			b, err := tfmerge.Merge(ctx.Context, tf, []byte(baseState), ctx.Args().Slice()...)
 			if err != nil {
 				return err
 			}
