@@ -3,15 +3,15 @@ package tfmerge
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/terraform-exec/tfexec"
+	tfjson "github.com/hashicorp/terraform-json"
 )
 
-// Merge merges the state files to the base state. If there is any address conflicts for either resource or module, it will error.
+// Merge merges the state files to the base state. If there is any resource address conflict, it will error.
 // baseState can be nil to indicate no base state file.
 func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFiles ...string) ([]byte, error) {
 	if baseState == nil {
@@ -40,10 +40,8 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 		return nil, fmt.Errorf("creating the base state file: %v", err)
 	}
 
-	log.Println("List resources/modules to be merged")
 	var result *multierror.Error
 	resmap := map[string]string{}
-	modmap := map[string]string{}
 
 	// If there is no state file in the current working directory, "terraform state pull" returns an empty string.
 	// In this case, we don't append it into the state file list for listing move items.
@@ -51,6 +49,25 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 	if len(baseState) != 0 {
 		stl = append(stl, baseStateFile)
 	}
+
+	var checkConflict func(stateFile string, module *tfjson.StateModule)
+	checkConflict = func(stateFile string, module *tfjson.StateModule) {
+		if module == nil {
+			return
+		}
+		for _, res := range module.Resources {
+			// Ensure there is no resource address overlaps across all the state files
+			if oStateFile, ok := resmap[res.Address]; ok {
+				result = multierror.Append(result, fmt.Errorf(`resource %s is defined in both state files %s and %s`, res.Address, stateFile, oStateFile))
+				continue
+			}
+			resmap[res.Address] = stateFile
+		}
+		for _, mod := range module.ChildModules {
+			checkConflict(stateFile, mod)
+		}
+	}
+
 	for _, stateFile := range stl {
 		state, err := tf.ShowStateFile(ctx, stateFile)
 		if err != nil {
@@ -60,25 +77,8 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 		if state.Values == nil {
 			continue
 		}
-		if state.Values.RootModule == nil {
-			continue
-		}
-		for _, res := range state.Values.RootModule.Resources {
-			// Ensure there is no resource address overlaps across all the state files
-			if oStateFile, ok := resmap[res.Address]; ok {
-				result = multierror.Append(result, fmt.Errorf(`resource %s is defined in both state files %s and %s`, res.Address, stateFile, oStateFile))
-				continue
-			}
-			resmap[res.Address] = stateFile
-		}
-		for _, mod := range state.Values.RootModule.ChildModules {
-			// Ensure there is no module address overlaps across all the state files
-			if oStateFile, ok := modmap[mod.Address]; ok {
-				result = multierror.Append(result, fmt.Errorf(`module %s is defined in both state files %s and %s`, mod.Address, stateFile, oStateFile))
-				continue
-			}
-			modmap[mod.Address] = stateFile
-		}
+		checkConflict(stateFile, state.Values.RootModule)
+
 	}
 	if err := result.ErrorOrNil(); err != nil {
 		return nil, err
@@ -88,21 +88,11 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 	for k, v := range resmap {
 		stateItems[v] = append(stateItems[v], k)
 	}
-	for k, v := range modmap {
-		stateItems[v] = append(stateItems[v], k)
-	}
 
 	// Remove the items that belongs to the base state file
 	delete(stateItems, baseStateFile)
 
-	// Debug output only
-	log.Println("Items to be moved:")
 	for stateFile, items := range stateItems {
-		log.Printf("\t%s: %v\n", stateFile, items)
-	}
-
-	for stateFile, items := range stateItems {
-		log.Printf("Run `terraform state move` for %s\n", stateFile)
 		if err := move(ctx, tf, tmpdir, stateFile, baseStateFile, items); err != nil {
 			return nil, fmt.Errorf("terraform state move from %s: %v", stateFile, err)
 		}

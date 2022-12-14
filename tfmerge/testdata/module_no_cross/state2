@@ -2,11 +2,11 @@
   "version": 4,
   "terraform_version": "1.2.8",
   "serial": 1,
-  "lineage": "97673df8-a96c-1ebb-e82b-fa1a6281a979",
+  "lineage": "a43c2c4e-d361-9815-d1d7-3f8a1589b50a",
   "outputs": {},
   "resources": [
     {
-      "module": "module.mod1",
+      "module": "module.mod2",
       "mode": "managed",
       "type": "null_resource",
       "name": "test",
@@ -15,7 +15,7 @@
         {
           "schema_version": 0,
           "attributes": {
-            "id": "4256987146005369787",
+            "id": "6013074630852056609",
             "triggers": null
           },
           "sensitive_attributes": [],
@@ -23,5 +23,6 @@
         }
       ]
     }
-  ]
+  ],
+  "check_results": null
 }
