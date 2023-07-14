@@ -16,8 +16,8 @@
 
         in
         {
-          packages.default = pkgs.callPackage ./. { };
-          devShells.default = import ./shell.nix { inherit pkgs; };
+          packages.default = pkgs.callPackage ./nix { };
+          devShells.default = import ./nix/shell.nix { inherit pkgs; };
         })
     );
 }
