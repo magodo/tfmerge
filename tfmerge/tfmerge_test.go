@@ -178,6 +178,10 @@ func TestMerge(t *testing.T) {
 			hasError: true,
 		},
 		{
+			name: "Resource conflict are the same resource",
+			dir:  "resource_conflict_same_id",
+		},
+		{
 			name: "Resource conflict with base state",
 			dir:  "resource_only",
 			baseState: `{
@@ -211,10 +215,16 @@ func TestMerge(t *testing.T) {
 			dir:      "module_conflict",
 			hasError: true,
 		},
+		{
+			name: "Module conflict are the same resource",
+			dir:  "module_conflict_same_id",
+		},
 	}
 
 	for _, tt := range cases {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			tf := initTest(ctx, t)
 			stateFiles, expect := testFixture(t, tt.dir)

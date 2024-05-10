@@ -11,7 +11,11 @@ import (
 	tfjson "github.com/hashicorp/terraform-json"
 )
 
-// Merge merges the state files to the base state. If there is any resource address conflict, it will error.
+// Merge merges the state files to the base state.
+//
+// In case there is resource address conflict, if the conflict resources have the same "id", they are regarded as the same, and only one of them is kept.
+// Otherwise, it will error.
+//
 // baseState can be nil to indicate no base state file.
 func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFiles ...string) ([]byte, error) {
 	if baseState == nil {
@@ -41,7 +45,13 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 	}
 
 	var result *multierror.Error
-	resmap := map[string]string{}
+
+	type resourceInfo struct {
+		stateFile string
+		id        string
+	}
+
+	resmap := map[string]resourceInfo{}
 
 	// If there is no state file in the current working directory, "terraform state pull" returns an empty string.
 	// In this case, we don't append it into the state file list for listing move items.
@@ -57,11 +67,19 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 		}
 		for _, res := range module.Resources {
 			// Ensure there is no resource address overlaps across all the state files
-			if oStateFile, ok := resmap[res.Address]; ok {
-				result = multierror.Append(result, fmt.Errorf(`resource %s is defined in both state files %s and %s`, res.Address, stateFile, oStateFile))
+			if oResInfo, ok := resmap[res.Address]; ok {
+				// Further check if the resource id are the same, in which case we regard they are the same resource and skip it
+				if oResInfo.id != "" && oResInfo.id == getResourceId(res) {
+					continue
+				}
+				result = multierror.Append(result, fmt.Errorf(`resource %s is defined in both state files %s and %s`, res.Address, stateFile, oResInfo.stateFile))
 				continue
 			}
-			resmap[res.Address] = stateFile
+
+			resmap[res.Address] = resourceInfo{
+				stateFile: stateFile,
+				id:        getResourceId(res),
+			}
 		}
 		for _, mod := range module.ChildModules {
 			checkConflict(stateFile, mod)
@@ -84,9 +102,10 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 		return nil, err
 	}
 
+	// key: state file name; value: resource address
 	stateItems := map[string][]string{}
 	for k, v := range resmap {
-		stateItems[v] = append(stateItems[v], k)
+		stateItems[v.stateFile] = append(stateItems[v.stateFile], k)
 	}
 
 	// Remove the items that belongs to the base state file
@@ -103,6 +122,16 @@ func Merge(ctx context.Context, tf *tfexec.Terraform, baseState []byte, stateFil
 		return nil, fmt.Errorf("reading from merged state file %s: %v", baseStateFile, err)
 	}
 	return b, nil
+}
+
+func getResourceId(res *tfjson.StateResource) string {
+	var id string
+	if idRaw, ok := res.AttributeValues["id"]; ok {
+		if idStr, ok := idRaw.(string); ok {
+			id = idStr
+		}
+	}
+	return id
 }
 
 func copyFile(src, dst string) error {
